@@ -16,11 +16,13 @@
 
 package com.example.android.screencapture;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.icu.text.SimpleDateFormat;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
@@ -30,6 +32,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.util.DisplayMetrics;
 import android.view.LayoutInflater;
@@ -46,7 +49,13 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.Date;
 
 /**
  * Provides UI for the screen capture.
@@ -54,6 +63,12 @@ import java.nio.ByteBuffer;
 public class ScreenCaptureFragment extends Fragment implements View.OnClickListener {
 
     private static final String TAG = "ScreenCaptureFragment";
+
+    private static final int REQUEST_EXTERNAL_STORAGE = 1;
+    private static String[] PERMISSIONS_STORAGE = {
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+    };
 
     private static final String STATE_RESULT_CODE = "result_code";
     private static final String STATE_RESULT_DATA = "result_data";
@@ -73,7 +88,11 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private SurfaceView mSurfaceView;
 
     private MediaCodec encoder;
-    FileOutputStream fileOutputStream = null;
+    private FileOutputStream fileOutputStream = null;
+
+    private DatagramSocket sock;
+    private InetAddress group;
+    private DatagramPacket currentPacket;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -81,6 +100,13 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         if (savedInstanceState != null) {
             mResultCode = savedInstanceState.getInt(STATE_RESULT_CODE);
             mResultData = savedInstanceState.getParcelable(STATE_RESULT_DATA);
+        }
+        try {
+            sock = new DatagramSocket(4445);
+            // Connect to the transmitting device IP.
+            group = InetAddress.getByName("224.0.113.0");
+        } catch (SocketException | UnknownHostException e) {
+            e.printStackTrace();
         }
     }
 
@@ -101,9 +127,15 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         int height = displayMetrics.heightPixels;
         int width = displayMetrics.widthPixels;
 
-
+        ActivityCompat.requestPermissions(
+                getActivity(),
+                PERMISSIONS_STORAGE,
+                REQUEST_EXTERNAL_STORAGE
+        );
         // Set up file writing for debugging.
-        File fileOut = new File(getActivity().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "testFrameOutput.h264");
+        SimpleDateFormat s = new SimpleDateFormat("ddMMyyyyhhmmss");
+        File fileOut = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                s.format(new Date()) + "testFrameOutput.h264");
         try {
             fileOutputStream = new FileOutputStream(fileOut, true);
         } catch (FileNotFoundException e) {
@@ -120,6 +152,8 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 0);
             format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+            // Set the encoder priority to realtime.
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0x00);
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             mSurface = MediaCodec.createPersistentInputSurface();
             encoder.setInputSurface(mSurface);
@@ -134,10 +168,24 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                     ByteBuffer outputBuffer = codec.getOutputBuffer(index);
                     try {
                         int val;
-                        while(outputBuffer.position() < outputBuffer.limit()){
-                            fileOutputStream.write(outputBuffer.get());
+                        ByteBuffer buf;
+
+                        if (outputBuffer != null) {
+                            buf = ByteBuffer.allocate(outputBuffer.limit());
+                            while(outputBuffer.position() < outputBuffer.limit()){
+                                byte cur = outputBuffer.get();
+                                fileOutputStream.write(cur);
+                                buf.put(cur);
+                            }
+                            Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
+
+                            currentPacket = new DatagramPacket(buf.array(), outputBuffer.limit(), group, 4446);
+                            sock.send(currentPacket);
                         }
-                        Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
+                        else{
+                            return;
+                        }
+
                         codec.releaseOutputBuffer(index, true);
                     } catch (IOException e) {
                         e.printStackTrace();
@@ -225,6 +273,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         super.onDestroy();
         tearDownMediaProjection();
         encoder.release();
+        sock.close();
     }
 
     private void setUpMediaProjection() {
