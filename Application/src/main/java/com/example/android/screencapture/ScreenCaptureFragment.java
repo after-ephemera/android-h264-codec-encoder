@@ -21,9 +21,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.util.DisplayMetrics;
@@ -36,6 +41,12 @@ import android.widget.Button;
 import android.widget.Toast;
 
 import com.example.android.common.logger.Log;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * Provides UI for the screen capture.
@@ -61,6 +72,9 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private Button mButtonToggle;
     private SurfaceView mSurfaceView;
 
+    private MediaCodec encoder;
+    FileOutputStream fileOutputStream = null;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -79,9 +93,72 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         mSurfaceView = (SurfaceView) view.findViewById(R.id.surface);
-        mSurface = mSurfaceView.getHolder().getSurface();
+//        mSurface = mSurfaceView.getHolder().getSurface();
         mButtonToggle = (Button) view.findViewById(R.id.toggle);
         mButtonToggle.setOnClickListener(this);
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        getActivity().getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+        int height = displayMetrics.heightPixels;
+        int width = displayMetrics.widthPixels;
+
+
+        // Set up file writing for debugging.
+        File fileOut = new File(getActivity().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "testFrameOutput.h264");
+        try {
+            fileOutputStream = new FileOutputStream(fileOut, true);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,
+                    width, height);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+            format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 0);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+            mSurface = MediaCodec.createPersistentInputSurface();
+            encoder.setInputSurface(mSurface);
+            encoder.setCallback(new MediaCodec.Callback() {
+                @Override
+                public void onInputBufferAvailable(@NonNull MediaCodec codec, int index) {
+
+                }
+
+                @Override
+                public void onOutputBufferAvailable(@NonNull MediaCodec codec, int index, @NonNull MediaCodec.BufferInfo info) {
+                    ByteBuffer outputBuffer = codec.getOutputBuffer(index);
+                    try {
+                        int val;
+                        while(outputBuffer.position() < outputBuffer.limit()){
+                            fileOutputStream.write(outputBuffer.get());
+                        }
+                        Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
+                        codec.releaseOutputBuffer(index, true);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                }
+
+                @Override
+                public void onError(@NonNull MediaCodec codec, @NonNull MediaCodec.CodecException e) {
+
+                }
+
+                @Override
+                public void onOutputFormatChanged(@NonNull MediaCodec codec, @NonNull MediaFormat format) {
+                    Log.d(TAG, "Updated output format!");
+                }
+            });
+            encoder.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -147,6 +224,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     public void onDestroy() {
         super.onDestroy();
         tearDownMediaProjection();
+        encoder.release();
     }
 
     private void setUpMediaProjection() {
@@ -183,10 +261,17 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         Log.i(TAG, "Setting up a VirtualDisplay: " +
                 mSurfaceView.getWidth() + "x" + mSurfaceView.getHeight() +
                 " (" + mScreenDensity + ")");
+        // Preview Display
         mVirtualDisplay = mMediaProjection.createVirtualDisplay("ScreenCapture",
                 mSurfaceView.getWidth(), mSurfaceView.getHeight(), mScreenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mSurface, null, null);
+
+        // Output Display
+//        mVirtualDisplay = mMediaProjection.createVirtualDisplay("ScreenCapture",
+//                mSurfaceView.getWidth(), mSurfaceView.getHeight(), mScreenDensity,
+//                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+//                mSurface, null, null);
         mButtonToggle.setText(R.string.stop);
     }
 
