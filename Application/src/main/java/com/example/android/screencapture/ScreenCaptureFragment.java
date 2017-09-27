@@ -28,6 +28,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.annotation.NonNull;
@@ -81,6 +82,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private Intent mResultData;
 
     private Surface mSurface;
+    private Surface previewSurface;
     private MediaProjection mMediaProjection;
     private VirtualDisplay mVirtualDisplay;
     private MediaProjectionManager mMediaProjectionManager;
@@ -93,6 +95,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private DatagramSocket sock;
     private InetAddress group;
     private DatagramPacket currentPacket;
+    private boolean configSent = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -100,13 +103,6 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         if (savedInstanceState != null) {
             mResultCode = savedInstanceState.getInt(STATE_RESULT_CODE);
             mResultData = savedInstanceState.getParcelable(STATE_RESULT_DATA);
-        }
-        try {
-            sock = new DatagramSocket(4445);
-            // Connect to the transmitting device IP.
-            group = InetAddress.getByName("224.0.113.0");
-        } catch (SocketException | UnknownHostException e) {
-            e.printStackTrace();
         }
     }
 
@@ -119,9 +115,26 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         mSurfaceView = (SurfaceView) view.findViewById(R.id.surface);
-//        mSurface = mSurfaceView.getHolder().getSurface();
+        previewSurface = mSurfaceView.getHolder().getSurface();
         mButtonToggle = (Button) view.findViewById(R.id.toggle);
         mButtonToggle.setOnClickListener(this);
+
+        startBroadcast();
+        Toast started = Toast.makeText(getActivity(), "Started broadcast", Toast.LENGTH_SHORT);
+        started.show();
+    }
+
+    private void startBroadcast(){
+
+        try {
+            sock = new DatagramSocket(4445);
+            // Connect to the transmitting device IP.
+//            group = InetAddress.getByName("224.0.113.0");
+            group = InetAddress.getByName("192.168.43.110");
+        } catch (SocketException | UnknownHostException e) {
+            e.printStackTrace();
+        }
+
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getActivity().getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
         int height = displayMetrics.heightPixels;
@@ -146,14 +159,14 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
             MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,
                     width, height);
-            format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
-            format.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, 500000);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 0);
-            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
             // Set the encoder priority to realtime.
-            format.setInteger(MediaFormat.KEY_PRIORITY, 0x00);
+;            format.setInteger(MediaFormat.KEY_PRIORITY, 0x00);
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             mSurface = MediaCodec.createPersistentInputSurface();
             encoder.setInputSurface(mSurface);
@@ -165,6 +178,12 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 
                 @Override
                 public void onOutputBufferAvailable(@NonNull MediaCodec codec, int index, @NonNull MediaCodec.BufferInfo info) {
+                    // Wait for SPS and PPS frames to be sent first.
+                    if(!configSent){
+                        codec.releaseOutputBuffer(index, false);
+                        return;
+                    }
+
                     ByteBuffer outputBuffer = codec.getOutputBuffer(index);
                     try {
                         int val;
@@ -179,14 +198,14 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                             }
                             Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
 
-                            currentPacket = new DatagramPacket(buf.array(), outputBuffer.limit(), group, 4446);
-                            sock.send(currentPacket);
+                            BroadcastTask broadcastTask = new BroadcastTask(new DatagramPacket(buf.array(), outputBuffer.limit(), group, 4446));
+                            broadcastTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
                         }
                         else{
                             return;
                         }
 
-                        codec.releaseOutputBuffer(index, true);
+                        codec.releaseOutputBuffer(index, false);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -200,7 +219,18 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 
                 @Override
                 public void onOutputFormatChanged(@NonNull MediaCodec codec, @NonNull MediaFormat format) {
-                    Log.d(TAG, "Updated output format!");
+                    Log.d(TAG, "Updated output format! New height:"
+                            + format.getInteger(MediaFormat.KEY_HEIGHT) + " new width: " +
+                              format.getInteger(MediaFormat.KEY_WIDTH));
+
+
+                    ByteBuffer sps = format.getByteBuffer("csd-0");
+                    ByteBuffer pps = format.getByteBuffer("csd-1");
+                    BroadcastTask spsTask = new BroadcastTask(new DatagramPacket(sps.array(), sps.limit(), group, 4446));
+                    BroadcastTask ppsTask = new BroadcastTask(new DatagramPacket(pps.array(), pps.limit(), group, 4446));
+                    spsTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
+                    ppsTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
+                    configSent = true;
                 }
             });
             encoder.start();
@@ -273,7 +303,9 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         super.onDestroy();
         tearDownMediaProjection();
         encoder.release();
-        sock.close();
+        if(sock != null) {
+            sock.close();
+        }
     }
 
     private void setUpMediaProjection() {
@@ -316,11 +348,6 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mSurface, null, null);
 
-        // Output Display
-//        mVirtualDisplay = mMediaProjection.createVirtualDisplay("ScreenCapture",
-//                mSurfaceView.getWidth(), mSurfaceView.getHeight(), mScreenDensity,
-//                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-//                mSurface, null, null);
         mButtonToggle.setText(R.string.stop);
     }
 
@@ -331,6 +358,27 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         mVirtualDisplay.release();
         mVirtualDisplay = null;
         mButtonToggle.setText(R.string.start);
+    }
+
+    private class BroadcastTask extends AsyncTask<String, String, String> {
+        DatagramPacket packetOut;
+
+        BroadcastTask(DatagramPacket packet){
+            packetOut = packet;
+        }
+
+        @Override
+        protected String doInBackground(String... strings) {
+            try {
+                sock.send(packetOut);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result){}
     }
 
 }
