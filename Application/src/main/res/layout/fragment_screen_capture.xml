@@ -18,19 +18,32 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal">
+    android:orientation="vertical">
 
-    <SurfaceView
-        android:id="@+id/surface"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"/>
+    <!--<SurfaceView-->
+        <!--android:id="@+id/surface"-->
+        <!--android:layout_width="0dp"-->
+        <!--android:layout_height="match_parent"-->
+        <!--android:layout_weight="1"/>-->
 
-    <Button
-        android:id="@+id/toggle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:text="@string/start"/>
+    <!--<ImageView-->
+        <!--android:id="@+id/image"-->
+        <!--android:background="@drawable/tile"-->
+        <!--android:layout_width="0dp"-->
+        <!--android:layout_height="match_parent"-->
+        <!--android:layout_weight="1"/>-->
+
+    <VideoView
+    android:id="@+id/vid"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1" />
+
+<Button
+    android:id="@+id/toggle"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="top"
+    android:text="@string/start"/>
 
 </LinearLayout>

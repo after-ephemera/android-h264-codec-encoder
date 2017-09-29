@@ -28,6 +28,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
@@ -41,8 +42,10 @@ import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import com.example.android.common.logger.Log;
 
@@ -97,6 +100,13 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private DatagramPacket currentPacket;
     private boolean configSent = false;
 
+    private final int PORT_OUT = 1900;
+//    private final int PORT_OUT = 1900;
+//    private int streamWidth = 1080;
+//    private int streamHeight = 1794;
+    private int streamWidth = 360;
+    private int streamHeight = 640;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -114,8 +124,12 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
-        mSurfaceView = (SurfaceView) view.findViewById(R.id.surface);
-        previewSurface = mSurfaceView.getHolder().getSurface();
+//        mSurfaceView = (SurfaceView) view.findViewById(R.id.surface);
+//        previewSurface = mSurfaceView.getHolder().getSurface();
+        VideoView videoView = (VideoView)view.findViewById(R.id.vid);
+        String path = "android.resource://" + getActivity().getPackageName() + "/" + R.raw.sw;
+        videoView.setVideoURI(Uri.parse(path));
+        videoView.start();
         mButtonToggle = (Button) view.findViewById(R.id.toggle);
         mButtonToggle.setOnClickListener(this);
 
@@ -129,8 +143,10 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         try {
             sock = new DatagramSocket(4445);
             // Connect to the transmitting device IP.
-//            group = InetAddress.getByName("224.0.113.0");
-            group = InetAddress.getByName("192.168.43.110");
+//            group = InetAddress.getByName("224.0.113.0"); // For multicast
+            group = InetAddress.getByName("192.168.43.110"); // Samsung Galaxy S7
+//            group = InetAddress.getByName("192.168.43.81"); // Lab iPhone
+
         } catch (SocketException | UnknownHostException e) {
             e.printStackTrace();
         }
@@ -157,14 +173,16 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 
         try {
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+//            MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,
+//                    width, height);
             MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,
-                    width, height);
-            format.setInteger(MediaFormat.KEY_BIT_RATE, 500000);
-            format.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
+                    streamWidth, streamHeight);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, 200000);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, 20);
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 0);
-            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10);
             // Set the encoder priority to realtime.
 ;            format.setInteger(MediaFormat.KEY_PRIORITY, 0x00);
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
@@ -198,7 +216,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                             }
                             Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
 
-                            BroadcastTask broadcastTask = new BroadcastTask(new DatagramPacket(buf.array(), outputBuffer.limit(), group, 4446));
+                            BroadcastTask broadcastTask = new BroadcastTask(new DatagramPacket(buf.array(), outputBuffer.limit(), group, PORT_OUT));
                             broadcastTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
                         }
                         else{
@@ -223,11 +241,10 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                             + format.getInteger(MediaFormat.KEY_HEIGHT) + " new width: " +
                               format.getInteger(MediaFormat.KEY_WIDTH));
 
-
                     ByteBuffer sps = format.getByteBuffer("csd-0");
                     ByteBuffer pps = format.getByteBuffer("csd-1");
-                    BroadcastTask spsTask = new BroadcastTask(new DatagramPacket(sps.array(), sps.limit(), group, 4446));
-                    BroadcastTask ppsTask = new BroadcastTask(new DatagramPacket(pps.array(), pps.limit(), group, 4446));
+                    BroadcastTask spsTask = new BroadcastTask(new DatagramPacket(sps.array(), sps.limit(), group, PORT_OUT));
+                    BroadcastTask ppsTask = new BroadcastTask(new DatagramPacket(pps.array(), pps.limit(), group, PORT_OUT));
                     spsTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
                     ppsTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
                     configSent = true;
@@ -339,12 +356,12 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     }
 
     private void setUpVirtualDisplay() {
-        Log.i(TAG, "Setting up a VirtualDisplay: " +
-                mSurfaceView.getWidth() + "x" + mSurfaceView.getHeight() +
-                " (" + mScreenDensity + ")");
-        // Preview Display
+//        mVirtualDisplay = mMediaProjection.createVirtualDisplay("ScreenCapture",
+//                mSurfaceView.getWidth(), mSurfaceView.getHeight(), mScreenDensity,
+//                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+//                mSurface, null, null);
         mVirtualDisplay = mMediaProjection.createVirtualDisplay("ScreenCapture",
-                mSurfaceView.getWidth(), mSurfaceView.getHeight(), mScreenDensity,
+                streamWidth, streamHeight, mScreenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mSurface, null, null);
 
