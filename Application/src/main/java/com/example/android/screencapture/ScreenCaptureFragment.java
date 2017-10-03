@@ -147,10 +147,16 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         try {
             sock = new DatagramSocket(4445);
             // Connect to the transmitting device IP.
+            // PIXEL HOST DEVICE
 //            group = InetAddress.getByName("224.0.113.0"); // For multicast
-            group = InetAddress.getByName("192.168.43.110"); // Samsung Galaxy S7
+//            group = InetAddress.getByName("192.168.43.110"); // Samsung Galaxy S7
 //            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
+//            group = InetAddress.getByName("192.168.43.137"); // Moto E4
 //            group = InetAddress.getByName("192.168.43.81"); // Lab iPhone
+
+            // E4 HOST DEVICE
+//            group = InetAddress.getByName("192.168.43.7"); // Pixel
+            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
 
         } catch (SocketException | UnknownHostException e) {
             e.printStackTrace();
