@@ -30,6 +30,7 @@ import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.annotation.NonNull;
@@ -91,6 +92,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private MediaProjectionManager mMediaProjectionManager;
     private Button mButtonToggle;
     private SurfaceView mSurfaceView;
+    private VideoView videoView;
 
     private MediaCodec encoder;
     private FileOutputStream fileOutputStream = null;
@@ -102,8 +104,10 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 
     private final int PORT_OUT = 1900;
 //    private final int PORT_OUT = 1900;
-//    private int streamWidth = 1080;
-//    private int streamHeight = 1794;
+//    private final int streamWidth = 1080;
+//    private final int streamHeight = 1794;
+//    private final int streamWidth = 720;
+//    private final int streamHeight = 1280;
     private int streamWidth = 360;
     private int streamHeight = 640;
 
@@ -126,7 +130,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     public void onViewCreated(View view, Bundle savedInstanceState) {
 //        mSurfaceView = (SurfaceView) view.findViewById(R.id.surface);
 //        previewSurface = mSurfaceView.getHolder().getSurface();
-        VideoView videoView = (VideoView)view.findViewById(R.id.vid);
+        videoView = (VideoView)view.findViewById(R.id.vid);
         String path = "android.resource://" + getActivity().getPackageName() + "/" + R.raw.sw;
         videoView.setVideoURI(Uri.parse(path));
         videoView.start();
@@ -145,6 +149,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
             // Connect to the transmitting device IP.
 //            group = InetAddress.getByName("224.0.113.0"); // For multicast
             group = InetAddress.getByName("192.168.43.110"); // Samsung Galaxy S7
+//            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
 //            group = InetAddress.getByName("192.168.43.81"); // Lab iPhone
 
         } catch (SocketException | UnknownHostException e) {
@@ -177,12 +182,16 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 //                    width, height);
             MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC,
                     streamWidth, streamHeight);
-            format.setInteger(MediaFormat.KEY_BIT_RATE, 200000);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, 220000);
             format.setInteger(MediaFormat.KEY_FRAME_RATE, 20);
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 0);
-            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10);
+            format.setInteger(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1000000);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                format.setInteger(MediaFormat.KEY_LATENCY, 0);
+            }
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
             // Set the encoder priority to realtime.
 ;            format.setInteger(MediaFormat.KEY_PRIORITY, 0x00);
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
@@ -203,30 +212,32 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                     }
 
                     ByteBuffer outputBuffer = codec.getOutputBuffer(index);
-                    try {
+//                    try {
                         int val;
                         ByteBuffer buf;
 
                         if (outputBuffer != null) {
                             buf = ByteBuffer.allocate(outputBuffer.limit());
-                            while(outputBuffer.position() < outputBuffer.limit()){
-                                byte cur = outputBuffer.get();
-                                fileOutputStream.write(cur);
-                                buf.put(cur);
-                            }
+//                            while(outputBuffer.position() < outputBuffer.limit()){
+//                                byte cur = outputBuffer.get();
+//                                fileOutputStream.write(cur);
+//                                buf.put(cur);
+//                            }
+                            buf.put(outputBuffer);
+                            buf.flip();
                             Log.d(TAG, "Wrote " + outputBuffer.limit() + " bytes.");
 
                             BroadcastTask broadcastTask = new BroadcastTask(new DatagramPacket(buf.array(), outputBuffer.limit(), group, PORT_OUT));
-                            broadcastTask.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR);
+                            broadcastTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
                         }
                         else{
                             return;
                         }
 
                         codec.releaseOutputBuffer(index, false);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
+//                    } catch (IOException e) {
+//                        e.printStackTrace();
+//                    }
 
                 }
 
@@ -353,6 +364,9 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                     mMediaProjectionManager.createScreenCaptureIntent(),
                     REQUEST_MEDIA_PROJECTION);
         }
+        if(!videoView.isPlaying()) {
+            videoView.start();
+        }
     }
 
     private void setUpVirtualDisplay() {
@@ -375,6 +389,9 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         mVirtualDisplay.release();
         mVirtualDisplay = null;
         mButtonToggle.setText(R.string.start);
+        if(videoView.isPlaying()){
+            videoView.pause();
+        }
     }
 
     private class BroadcastTask extends AsyncTask<String, String, String> {
