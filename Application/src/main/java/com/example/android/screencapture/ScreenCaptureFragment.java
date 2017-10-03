@@ -43,7 +43,6 @@ import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.Toast;
 import android.widget.VideoView;
@@ -90,7 +89,8 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     private MediaProjection mMediaProjection;
     private VirtualDisplay mVirtualDisplay;
     private MediaProjectionManager mMediaProjectionManager;
-    private Button mButtonToggle;
+    private Button toggleButton;
+    private Button playPauseButton;
     private SurfaceView mSurfaceView;
     private VideoView videoView;
 
@@ -134,8 +134,10 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         String path = "android.resource://" + getActivity().getPackageName() + "/" + R.raw.sw;
         videoView.setVideoURI(Uri.parse(path));
         videoView.start();
-        mButtonToggle = (Button) view.findViewById(R.id.toggle);
-        mButtonToggle.setOnClickListener(this);
+        toggleButton = (Button) view.findViewById(R.id.toggleStream);
+        toggleButton.setOnClickListener(this);
+        playPauseButton = (Button) view.findViewById(R.id.playPause);
+        playPauseButton.setOnClickListener(this);
 
         startBroadcast();
         Toast started = Toast.makeText(getActivity(), "Started broadcast", Toast.LENGTH_SHORT);
@@ -151,12 +153,12 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
 //            group = InetAddress.getByName("224.0.113.0"); // For multicast
 //            group = InetAddress.getByName("192.168.43.110"); // Samsung Galaxy S7
 //            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
-//            group = InetAddress.getByName("192.168.43.137"); // Moto E4
+            group = InetAddress.getByName("192.168.43.137"); // Moto E4
 //            group = InetAddress.getByName("192.168.43.81"); // Lab iPhone
 
             // E4 HOST DEVICE
 //            group = InetAddress.getByName("192.168.43.7"); // Pixel
-            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
+//            group = InetAddress.getByName("192.168.43.37"); // Jk iPhone
 
         } catch (SocketException | UnknownHostException e) {
             e.printStackTrace();
@@ -296,13 +298,21 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
-            case R.id.toggle:
+            case R.id.toggleStream:
                 if (mVirtualDisplay == null) {
                     startScreenCapture();
                 } else {
                     stopScreenCapture();
                 }
                 break;
+            case R.id.playPause:
+                if(videoView.isPlaying()){
+                    videoView.pause();
+                    playPauseButton.setText(R.string.play);
+                } else{
+                    videoView.start();
+                    playPauseButton.setText(R.string.pause);
+                }
         }
     }
 
@@ -370,9 +380,6 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                     mMediaProjectionManager.createScreenCaptureIntent(),
                     REQUEST_MEDIA_PROJECTION);
         }
-        if(!videoView.isPlaying()) {
-            videoView.start();
-        }
     }
 
     private void setUpVirtualDisplay() {
@@ -385,7 +392,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mSurface, null, null);
 
-        mButtonToggle.setText(R.string.stop);
+        toggleButton.setText(R.string.stop);
     }
 
     private void stopScreenCapture() {
@@ -394,10 +401,7 @@ public class ScreenCaptureFragment extends Fragment implements View.OnClickListe
         }
         mVirtualDisplay.release();
         mVirtualDisplay = null;
-        mButtonToggle.setText(R.string.start);
-        if(videoView.isPlaying()){
-            videoView.pause();
-        }
+        toggleButton.setText(R.string.start);
     }
 
     private class BroadcastTask extends AsyncTask<String, String, String> {

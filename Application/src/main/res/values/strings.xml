@@ -15,7 +15,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <resources>
-    <string name="start">Start</string>
-    <string name="stop">Stop</string>
+    <string name="start">Start stream</string>
+    <string name="stop">Stop stream</string>
     <string name="user_cancelled">User denied screen sharing permission</string>
+    <string name="play">play video</string>
+    <string name="pause">pause video</string>
 </resources>

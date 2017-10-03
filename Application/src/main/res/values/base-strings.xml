@@ -16,7 +16,7 @@
 -->
 
 <resources>
-    <string name="app_name">OldScreenCapture</string>
+    <string name="app_name">ScreenCapture</string>
     <string name="intro_message">
         <![CDATA[
         
